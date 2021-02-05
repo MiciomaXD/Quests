@@ -17,11 +17,13 @@ import com.leonardobishop.quests.quests.QuestManager;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
 import com.leonardobishop.quests.quests.tasktypes.TaskTypeManager;
 import com.leonardobishop.quests.quests.tasktypes.types.*;
+import com.leonardobishop.quests.quests.tasktypes.types.dependent.*;
 import com.leonardobishop.quests.title.Title;
 import com.leonardobishop.quests.title.Title_Bukkit;
 import com.leonardobishop.quests.title.Title_BukkitNoTimings;
 import com.leonardobishop.quests.title.Title_Other;
 import com.leonardobishop.quests.updater.Updater;
+import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
@@ -31,7 +33,6 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.io.*;
 import java.util.ArrayList;
-import java.util.Map;
 
 public class Quests extends JavaPlugin {
 
@@ -42,8 +43,10 @@ public class Quests extends JavaPlugin {
     private static Updater updater;
     private static Title title;
     private ItemGetter itemGetter;
+    private QuestCompleter questCompleter;
     private QuestsConfigLoader questsConfigLoader;
     private QuestsLogger questsLogger;
+    private PlaceholderExpansion placeholder;
 
     private boolean brokenConfig = false;
     private BukkitTask questCompleterTask;
@@ -98,7 +101,8 @@ public class Quests extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        questsLogger = new QuestsLogger(this, LoggingLevel.INFO);
+        questsLogger = new QuestsLogger(this, QuestsLogger.LoggingLevel.INFO);
+        questCompleter = new QuestCompleter(this);
 
         taskTypeManager = new TaskTypeManager(this);
         questManager = new QuestManager(this);
@@ -113,7 +117,8 @@ public class Quests extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new EventPlayerLeave(this), this);
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
-            new QuestsPlaceholders(this).register();
+            placeholder = new QuestsPlaceholders(this);
+            placeholder.register();
         }
 
         Metrics metrics = new Metrics(this);
@@ -146,6 +151,8 @@ public class Quests extends JavaPlugin {
             taskTypeManager.registerTaskType(new EnchantingTaskType());
             taskTypeManager.registerTaskType(new DealDamageTaskType());
             taskTypeManager.registerTaskType(new PermissionTaskType());
+            taskTypeManager.registerTaskType(new DistancefromTaskType());
+            taskTypeManager.registerTaskType(new CommandTaskType());
             // TODO: FIX
             // taskTypeManager.registerTaskType(new BrewingCertainTaskType());
             if (Bukkit.getPluginManager().isPluginEnabled("ASkyBlock")) {
@@ -170,18 +177,22 @@ public class Quests extends JavaPlugin {
             if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                 taskTypeManager.registerTaskType(new PlaceholderAPIEvaluateTaskType());
             }
+            if (Bukkit.getPluginManager().isPluginEnabled("Essentials")) {
+                taskTypeManager.registerTaskType(new EssentialsMoneyEarnTaskType());
+                taskTypeManager.registerTaskType(new EssentialsBalanceTaskType());
+            }
 
             taskTypeManager.closeRegistrations();
             reloadQuests();
-            if (!questsConfigLoader.getBrokenFiles().isEmpty()) {
-                this.getQuestsLogger().severe("Quests has failed to load the following files:");
-                for (Map.Entry<String, QuestsConfigLoader.ConfigLoadError> entry : questsConfigLoader.getBrokenFiles().entrySet()) {
-                    this.getQuestsLogger().severe(" - " + entry.getKey() + ": " + entry.getValue().getMessage());
-                }
-            }
+//            if (!questsConfigLoader.getBrokenFiles().isEmpty()) {
+//                this.getQuestsLogger().severe("Quests has failed to load the following files:");
+//                for (Map.Entry<String, QuestsConfigLoader.ConfigLoadError> entry : questsConfigLoader.getBrokenFiles().entrySet()) {
+//                    this.getQuestsLogger().severe(" - " + entry.getKey() + ": " + entry.getValue().getMessage());
+//                }
+//            }
 
             for (Player player : Bukkit.getOnlinePlayers()) {
-                qPlayerManager.loadPlayer(player.getUniqueId(), false);
+                qPlayerManager.loadPlayer(player.getUniqueId());
             }
         });
 
@@ -190,6 +201,8 @@ public class Quests extends JavaPlugin {
         try {
             ignoreUpdates = new File(this.getDataFolder() + File.separator + "stfuQuestsUpdate").exists();
         } catch (Throwable ignored) { }
+
+        Bukkit.getScheduler().runTaskTimer(this, questCompleter, 1L, 1L);
 
         updater = new Updater(this);
         if (!ignoreUpdates) {
@@ -207,11 +220,9 @@ public class Quests extends JavaPlugin {
             } catch (Exception ignored) { }
         }
         for (QPlayer qPlayer : qPlayerManager.getQPlayers()) {
-            if (qPlayer.isOnlyDataLoaded()) {
-                continue;
-            }
             qPlayer.getQuestProgressFile().saveToDisk(true);
         }
+        if (placeholder != null) placeholder.unregister();
     }
 
     public void reloadQuests() {
@@ -230,26 +241,23 @@ public class Quests extends JavaPlugin {
         if (questAutosaveTask != null) {
             try {
                 questAutosaveTask.cancel();
-            } catch (Exception ignored) { }
+            } catch (Exception ex) {
+                questsLogger.debug("Cannot cancel quest autosave task");
+            }
         }
         questAutosaveTask = Bukkit.getScheduler().runTaskTimer(this, () -> {
             for (QPlayer qPlayer : qPlayerManager.getQPlayers()) {
-                if (qPlayer.isOnlyDataLoaded()) {
-                    continue;
-                }
                 qPlayer.getQuestProgressFile().saveToDisk(false);
             }
         }, autocompleteInterval, autocompleteInterval);
-        if (questCompleterTask != null) {
-            try {
-                questCompleterTask.cancel();
-            } catch (Exception ignored) { }
-        }
-        questCompleterTask = Bukkit.getScheduler().runTaskTimer(this, new QuestCompleter(this), 20, completerPollInterval);
     }
 
     public ItemStack getItemStack(String path, ConfigurationSection config, ItemGetter.Filter... excludes) {
         return itemGetter.getItem(path, config, this, excludes);
+    }
+
+    public ItemGetter getItemGetter() {
+        return itemGetter;
     }
 
     private void setupVersionSpecific() {
@@ -330,6 +338,7 @@ public class Quests extends JavaPlugin {
             examples.add("example4.yml");
             examples.add("example5.yml");
             examples.add("example6.yml");
+            examples.add("example7.yml");
             examples.add("README.txt");
 
             for (String name : examples) {
@@ -354,6 +363,10 @@ public class Quests extends JavaPlugin {
                 }
             }
         }
+    }
+
+    public QuestCompleter getQuestCompleter() {
+        return questCompleter;
     }
 
     public QuestsLogger getQuestsLogger() {

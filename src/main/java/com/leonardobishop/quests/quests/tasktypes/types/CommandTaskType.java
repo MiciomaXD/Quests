@@ -12,32 +12,33 @@ import com.leonardobishop.quests.quests.tasktypes.ConfigValue;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
 import com.leonardobishop.quests.quests.tasktypes.TaskUtils;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Sheep;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
-import org.bukkit.event.player.PlayerShearEntityEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-public final class ShearingTaskType extends TaskType {
+public final class CommandTaskType extends TaskType {
 
     private List<ConfigValue> creatorConfigValues = new ArrayList<>();
 
-    public ShearingTaskType() {
-        super("shearing", "LMBishop", "Shear a set amount of sheep.");
-        this.creatorConfigValues.add(new ConfigValue("amount", true, "Amount of cows to be milked."));
+    public CommandTaskType() {
+        super("command", "LMBishop", "Execute a certain command.");
+        this.creatorConfigValues.add(new ConfigValue("command", true, "The command to execute."));
+        this.creatorConfigValues.add(new ConfigValue("ignore-case", false, "Ignore the casing of the command."));
+        this.creatorConfigValues.add(new ConfigValue("worlds", false, "Permitted worlds the player must be in."));
     }
 
     @Override
     public List<QuestsConfigLoader.ConfigProblem> detectProblemsInConfig(String root, HashMap<String, Object> config) {
         ArrayList<QuestsConfigLoader.ConfigProblem> problems = new ArrayList<>();
-        if (TaskUtils.configValidateExists(root + ".amount", config.get("amount"), problems, "amount", super.getType()))
-            TaskUtils.configValidateInt(root + ".amount", config.get("amount"), problems, false, true, "amount");
+        TaskUtils.configValidateExists(root + ".command", config.get("command"), problems, "command", super.getType());
+        TaskUtils.configValidateBoolean(root + ".ignore-case", config.get("ignore-case"), problems, true, "ignore-case", super.getType());
         return problems;
     }
-
 
     @Override
     public List<ConfigValue> getCreatorConfigValues() {
@@ -45,12 +46,8 @@ public final class ShearingTaskType extends TaskType {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onShear(PlayerShearEntityEvent event) {
-        if (!(event.getEntity() instanceof Sheep)) {
-            return;
-        }
-
-        Player player = event.getPlayer();
+    public void onCommand(PlayerCommandPreprocessEvent e) {
+        Player player = e.getPlayer();
 
         QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(player.getUniqueId(), true);
         QuestProgressFile questProgressFile = qPlayer.getQuestProgressFile();
@@ -67,24 +64,34 @@ public final class ShearingTaskType extends TaskType {
                     if (taskProgress.isCompleted()) {
                         continue;
                     }
+                    Object configCommand = task.getConfigValue("command");
+                    Object configIgnoreCase = task.getConfigValue("ignore-case");
 
-                    int sheepNeeded = (int) task.getConfigValue("amount");
-
-                    int progressSheared;
-                    if (taskProgress.getProgress() == null) {
-                        progressSheared = 0;
+                    List<String> commands = new ArrayList<>();
+                    if (configCommand instanceof List) {
+                        commands.addAll((List) configCommand);
                     } else {
-                        progressSheared = (int) taskProgress.getProgress();
+                        commands.add(String.valueOf(configCommand));
                     }
 
-                    taskProgress.setProgress(progressSheared + 1);
+                    boolean ignoreCasing = false;
+                    if (configIgnoreCase != null) {
+                        ignoreCasing = (boolean) task.getConfigValue("ignore-case");
+                    }
+                    String message = e.getMessage();
+                    if (message.length() >= 1) {
+                        message = message.substring(1);
+                    }
 
-                    if (((int) taskProgress.getProgress()) >= sheepNeeded) {
-                        taskProgress.setCompleted(true);
+                    for (String command : commands) {
+                        if (ignoreCasing && command.equalsIgnoreCase(message)) {
+                            taskProgress.setCompleted(true);
+                        } else if (!ignoreCasing && command.equals(message)) {
+                            taskProgress.setCompleted(true);
+                        }
                     }
                 }
             }
         }
     }
-
 }

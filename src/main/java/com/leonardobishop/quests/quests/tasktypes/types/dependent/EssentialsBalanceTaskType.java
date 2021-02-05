@@ -1,5 +1,6 @@
-package com.leonardobishop.quests.quests.tasktypes.types;
+package com.leonardobishop.quests.quests.tasktypes.types.dependent;
 
+import com.earth2me.essentials.Essentials;
 import com.leonardobishop.quests.QuestsConfigLoader;
 import com.leonardobishop.quests.api.QuestsAPI;
 import com.leonardobishop.quests.player.QPlayer;
@@ -11,31 +12,52 @@ import com.leonardobishop.quests.quests.Task;
 import com.leonardobishop.quests.quests.tasktypes.ConfigValue;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
 import com.leonardobishop.quests.quests.tasktypes.TaskUtils;
-import org.bukkit.entity.Entity;
+import net.ess3.api.events.UserBalanceUpdateEvent;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
-import org.bukkit.event.entity.EntityDeathEvent;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 
-public final class PlayerkillingTaskType extends TaskType {
+public class EssentialsBalanceTaskType extends TaskType {
 
     private List<ConfigValue> creatorConfigValues = new ArrayList<>();
 
-    public PlayerkillingTaskType() {
-        super("playerkilling", "LMBishop", "Kill a set amount of players.");
-        this.creatorConfigValues.add(new ConfigValue("amount", true, "Amount of players to be killed."));
+    public EssentialsBalanceTaskType() {
+        super("essentials_balance", "LMBishop", "Reach a set amount of money.");
+        this.creatorConfigValues.add(new ConfigValue("amount", true, "Amount of money to reach."));
     }
 
     @Override
     public List<QuestsConfigLoader.ConfigProblem> detectProblemsInConfig(String root, HashMap<String, Object> config) {
         ArrayList<QuestsConfigLoader.ConfigProblem> problems = new ArrayList<>();
         if (TaskUtils.configValidateExists(root + ".amount", config.get("amount"), problems, "amount", super.getType()))
-            TaskUtils.configValidateInt(root + ".amount", config.get("amount"), problems, false, true, "amount");
+            TaskUtils.configValidateInt(root + ".amount", config.get("amount"), problems, false, false, "amount");
         return problems;
+    }
+
+    @Override
+    public void onStart(Quest quest, Task task, UUID playerUUID) {
+        Player player = Bukkit.getPlayer(playerUUID);
+        Essentials ess = (Essentials) Bukkit.getPluginManager().getPlugin("Essentials");
+        if (player != null && player.isOnline() && ess != null) {
+            QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(playerUUID);
+            QuestProgressFile questProgressFile = qPlayer.getQuestProgressFile();
+            QuestProgress questProgress = questProgressFile.getQuestProgress(quest);
+            TaskProgress taskProgress = questProgress.getTaskProgress(task.getId());
+
+            int earningsNeeded = (int) task.getConfigValue("amount");
+            BigDecimal money = ess.getUser(player).getMoney();
+            taskProgress.setProgress(money);
+            if (money.compareTo(BigDecimal.valueOf(earningsNeeded)) > 0) {
+                taskProgress.setCompleted(true);
+            }
+        }
     }
 
     @Override
@@ -44,19 +66,12 @@ public final class PlayerkillingTaskType extends TaskType {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onMobKill(EntityDeathEvent event) {
-        Player killer = event.getEntity().getKiller();
-        Entity mob = event.getEntity();
-
-        if (!(mob instanceof Player)) {
+    public void onMoneyEarn(UserBalanceUpdateEvent event) {
+        QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(event.getPlayer().getUniqueId(), true);
+        if (qPlayer == null) {
             return;
         }
 
-        if (killer == null) {
-            return;
-        }
-
-        QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(killer.getUniqueId(), true);
         QuestProgressFile questProgressFile = qPlayer.getQuestProgressFile();
 
         for (Quest quest : super.getRegisteredQuests()) {
@@ -64,26 +79,17 @@ public final class PlayerkillingTaskType extends TaskType {
                 QuestProgress questProgress = questProgressFile.getQuestProgress(quest);
 
                 for (Task task : quest.getTasksOfType(super.getType())) {
-                    if (!TaskUtils.validateWorld(killer, task)) continue;
-
                     TaskProgress taskProgress = questProgress.getTaskProgress(task.getId());
 
                     if (taskProgress.isCompleted()) {
                         continue;
                     }
 
-                    int playerKillsNeeded = (int) task.getConfigValue("amount");
+                    int earningsNeeded = (int) task.getConfigValue("amount");
 
-                    int progressKills;
-                    if (taskProgress.getProgress() == null) {
-                        progressKills = 0;
-                    } else {
-                        progressKills = (int) taskProgress.getProgress();
-                    }
+                    taskProgress.setProgress(event.getNewBalance());
 
-                    taskProgress.setProgress(progressKills + 1);
-
-                    if (((int) taskProgress.getProgress()) >= playerKillsNeeded) {
+                    if (event.getNewBalance().compareTo(BigDecimal.valueOf(earningsNeeded)) > 0) {
                         taskProgress.setCompleted(true);
                     }
                 }

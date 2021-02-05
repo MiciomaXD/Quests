@@ -1,4 +1,4 @@
-package com.leonardobishop.quests.quests.tasktypes.types;
+package com.leonardobishop.quests.quests.tasktypes.types.dependent;
 
 import com.leonardobishop.quests.QuestsConfigLoader;
 import com.leonardobishop.quests.api.QuestsAPI;
@@ -11,30 +11,28 @@ import com.leonardobishop.quests.quests.Task;
 import com.leonardobishop.quests.quests.tasktypes.ConfigValue;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
 import com.leonardobishop.quests.quests.tasktypes.TaskUtils;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.Player;
+import com.wasteofplastic.askyblock.events.IslandPostLevelEvent;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
-import org.bukkit.event.entity.EntityDeathEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-public final class PlayerkillingTaskType extends TaskType {
+public final class ASkyBlockLevelType extends TaskType {
 
     private List<ConfigValue> creatorConfigValues = new ArrayList<>();
 
-    public PlayerkillingTaskType() {
-        super("playerkilling", "LMBishop", "Kill a set amount of players.");
-        this.creatorConfigValues.add(new ConfigValue("amount", true, "Amount of players to be killed."));
+    public ASkyBlockLevelType() {
+        super("askyblock_level", "LMBishop", "Reach a certain island level for ASkyBlock.");
+        this.creatorConfigValues.add(new ConfigValue("level", true, "Minimum island level needed."));
     }
 
     @Override
     public List<QuestsConfigLoader.ConfigProblem> detectProblemsInConfig(String root, HashMap<String, Object> config) {
         ArrayList<QuestsConfigLoader.ConfigProblem> problems = new ArrayList<>();
-        if (TaskUtils.configValidateExists(root + ".amount", config.get("amount"), problems, "amount", super.getType()))
-            TaskUtils.configValidateInt(root + ".amount", config.get("amount"), problems, false, true, "amount");
+        if (TaskUtils.configValidateExists(root + ".level", config.get("level"), problems, "level", super.getType()))
+            TaskUtils.configValidateInt(root + ".level", config.get("level"), problems, false, false, "level");
         return problems;
     }
 
@@ -44,19 +42,12 @@ public final class PlayerkillingTaskType extends TaskType {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onMobKill(EntityDeathEvent event) {
-        Player killer = event.getEntity().getKiller();
-        Entity mob = event.getEntity();
-
-        if (!(mob instanceof Player)) {
+    public void onIslandLevel(IslandPostLevelEvent event) {
+        QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(event.getPlayer(), true);
+        if (qPlayer == null) {
             return;
         }
 
-        if (killer == null) {
-            return;
-        }
-
-        QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(killer.getUniqueId(), true);
         QuestProgressFile questProgressFile = qPlayer.getQuestProgressFile();
 
         for (Quest quest : super.getRegisteredQuests()) {
@@ -64,31 +55,21 @@ public final class PlayerkillingTaskType extends TaskType {
                 QuestProgress questProgress = questProgressFile.getQuestProgress(quest);
 
                 for (Task task : quest.getTasksOfType(super.getType())) {
-                    if (!TaskUtils.validateWorld(killer, task)) continue;
-
                     TaskProgress taskProgress = questProgress.getTaskProgress(task.getId());
 
                     if (taskProgress.isCompleted()) {
                         continue;
                     }
 
-                    int playerKillsNeeded = (int) task.getConfigValue("amount");
+                    long islandLevelNeeded = (long) (int) task.getConfigValue("level");
 
-                    int progressKills;
-                    if (taskProgress.getProgress() == null) {
-                        progressKills = 0;
-                    } else {
-                        progressKills = (int) taskProgress.getProgress();
-                    }
+                    taskProgress.setProgress(event.getLongLevel());
 
-                    taskProgress.setProgress(progressKills + 1);
-
-                    if (((int) taskProgress.getProgress()) >= playerKillsNeeded) {
+                    if (((long) taskProgress.getProgress()) >= islandLevelNeeded) {
                         taskProgress.setCompleted(true);
                     }
                 }
             }
         }
     }
-
 }

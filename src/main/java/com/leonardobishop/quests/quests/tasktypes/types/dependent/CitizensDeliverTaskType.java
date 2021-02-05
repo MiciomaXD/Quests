@@ -1,6 +1,7 @@
-package com.leonardobishop.quests.quests.tasktypes.types;
+package com.leonardobishop.quests.quests.tasktypes.types.dependent;
 
 import com.leonardobishop.quests.Quests;
+import com.leonardobishop.quests.QuestsConfigLoader;
 import com.leonardobishop.quests.player.QPlayer;
 import com.leonardobishop.quests.player.questprogressfile.QuestProgress;
 import com.leonardobishop.quests.player.questprogressfile.QuestProgressFile;
@@ -9,6 +10,7 @@ import com.leonardobishop.quests.quests.Quest;
 import com.leonardobishop.quests.quests.Task;
 import com.leonardobishop.quests.quests.tasktypes.ConfigValue;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
+import com.leonardobishop.quests.quests.tasktypes.TaskUtils;
 import net.citizensnpcs.api.event.NPCRightClickEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -20,6 +22,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 public final class CitizensDeliverTaskType extends TaskType {
@@ -33,6 +36,42 @@ public final class CitizensDeliverTaskType extends TaskType {
         this.creatorConfigValues.add(new ConfigValue("npc-name", true, "Name of the NPC."));
         this.creatorConfigValues.add(new ConfigValue("remove-items-when-complete", false, "Take the items away from the player on completion (true/false, " +
                 "default = false)."));
+        this.creatorConfigValues.add(new ConfigValue("worlds", false, "Permitted worlds the player must be in."));
+    }
+
+    @Override
+    public List<QuestsConfigLoader.ConfigProblem> detectProblemsInConfig(String root, HashMap<String, Object> config) {
+        ArrayList<QuestsConfigLoader.ConfigProblem> problems = new ArrayList<>();
+        if (TaskUtils.configValidateExists(root + ".item", config.get("item"), problems, "item", super.getType())) {
+            Object configBlock = config.get("item");
+            if (configBlock instanceof ConfigurationSection) {
+                ConfigurationSection section = (ConfigurationSection) configBlock;
+                String itemloc = "item";
+                if (!section.contains("item")) {
+                    itemloc = "type";
+                }
+                if (!section.contains(itemloc)) {
+                    problems.add(new QuestsConfigLoader.ConfigProblem(QuestsConfigLoader.ConfigProblemType.WARNING,
+                            QuestsConfigLoader.ConfigProblemDescriptions.UNKNOWN_MATERIAL.getDescription(""), root + ".item.type"));
+                } else {
+                    String type = String.valueOf(section.get(itemloc));
+                    if (!Quests.get().getItemGetter().isValidMaterial(type)) {
+                        problems.add(new QuestsConfigLoader.ConfigProblem(QuestsConfigLoader.ConfigProblemType.WARNING,
+                                QuestsConfigLoader.ConfigProblemDescriptions.UNKNOWN_MATERIAL.getDescription(type), root + ".item." + itemloc));
+                    }
+                }
+            } else {
+                if (Material.getMaterial(String.valueOf(configBlock)) == null) {
+                    problems.add(new QuestsConfigLoader.ConfigProblem(QuestsConfigLoader.ConfigProblemType.WARNING,
+                            QuestsConfigLoader.ConfigProblemDescriptions.UNKNOWN_MATERIAL.getDescription(String.valueOf(configBlock)), root + ".item.item"));
+                }
+            }
+        }
+        if (TaskUtils.configValidateExists(root + ".amount", config.get("amount"), problems, "amount", super.getType()))
+            TaskUtils.configValidateInt(root + ".amount", config.get("amount"), problems, false, true, "amount");
+        TaskUtils.configValidateExists(root + ".npc-name", config.get("npc-name"), problems, "npc-name", super.getType());
+        TaskUtils.configValidateBoolean(root + ".remove-items-when-complete", config.get("remove-items-when-complete"), problems, true, "remove-items-when-complete", super.getType());
+        return problems;
     }
 
     @Override
@@ -47,6 +86,9 @@ public final class CitizensDeliverTaskType extends TaskType {
 
     @SuppressWarnings("deprecation")
     private void checkInventory(Player player, String citizenName) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
         QPlayer qPlayer = Quests.get().getPlayerManager().getPlayer(player.getUniqueId(), true);
         if (qPlayer == null) {
             return;
@@ -63,6 +105,8 @@ public final class CitizensDeliverTaskType extends TaskType {
                             .stripColor(ChatColor.translateAlternateColorCodes('&', citizenName)))) {
                         return;
                     }
+                    if (!TaskUtils.validateWorld(player, task)) continue;
+
                     TaskProgress taskProgress = questProgress.getTaskProgress(task.getId());
 
                     if (taskProgress.isCompleted()) {

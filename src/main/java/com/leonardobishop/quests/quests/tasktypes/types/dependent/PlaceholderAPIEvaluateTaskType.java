@@ -1,4 +1,4 @@
-package com.leonardobishop.quests.quests.tasktypes.types;
+package com.leonardobishop.quests.quests.tasktypes.types.dependent;
 
 import com.leonardobishop.quests.Quests;
 import com.leonardobishop.quests.api.QuestsAPI;
@@ -10,6 +10,7 @@ import com.leonardobishop.quests.quests.Quest;
 import com.leonardobishop.quests.quests.Task;
 import com.leonardobishop.quests.quests.tasktypes.ConfigValue;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
+import com.leonardobishop.quests.quests.tasktypes.TaskUtils;
 import me.clip.placeholderapi.PlaceholderAPI;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -25,7 +26,7 @@ public final class PlaceholderAPIEvaluateTaskType extends TaskType {
     private List<ConfigValue> creatorConfigValues = new ArrayList<>();
 
     public PlaceholderAPIEvaluateTaskType() {
-        super("placeholderapi_evaluate", "LMBishop", "Test if a player has a permission");
+        super("placeholderapi_evaluate", "LMBishop", "Evaluate the result of a placeholder");
         this.creatorConfigValues.add(new ConfigValue("placeholder", true, "The placeholder string (including %%)."));
         this.creatorConfigValues.add(new ConfigValue("evaluates", true, "What it should evaluate to be marked as complete."));
     }
@@ -42,6 +43,7 @@ public final class PlaceholderAPIEvaluateTaskType extends TaskType {
                         if (questProgressFile.hasStartedQuest(quest)) {
                             QuestProgress questProgress = questProgressFile.getQuestProgress(quest);
                             for (Task task : quest.getTasksOfType(PlaceholderAPIEvaluateTaskType.super.getType())) {
+                                if (!TaskUtils.validateWorld(player, task)) continue;
                                 TaskProgress taskProgress = questProgress.getTaskProgress(task.getId());
                                 if (taskProgress.isCompleted()) {
                                     continue;

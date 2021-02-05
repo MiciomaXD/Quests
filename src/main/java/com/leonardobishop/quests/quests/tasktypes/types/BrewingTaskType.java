@@ -1,5 +1,6 @@
 package com.leonardobishop.quests.quests.tasktypes.types;
 
+import com.leonardobishop.quests.QuestsConfigLoader;
 import com.leonardobishop.quests.api.QuestsAPI;
 import com.leonardobishop.quests.player.QPlayer;
 import com.leonardobishop.quests.player.questprogressfile.QuestProgress;
@@ -9,6 +10,7 @@ import com.leonardobishop.quests.quests.Quest;
 import com.leonardobishop.quests.quests.Task;
 import com.leonardobishop.quests.quests.tasktypes.ConfigValue;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
+import com.leonardobishop.quests.quests.tasktypes.TaskUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -33,6 +35,15 @@ public final class BrewingTaskType extends TaskType {
     public BrewingTaskType() {
         super("brewing", "LMBishop", "Brew a potion.");
         this.creatorConfigValues.add(new ConfigValue("amount", true, "Amount of potions to be brewed."));
+        this.creatorConfigValues.add(new ConfigValue("worlds", false, "Permitted worlds the player must be in."));
+    }
+
+    @Override
+    public List<QuestsConfigLoader.ConfigProblem> detectProblemsInConfig(String root, HashMap<String, Object> config) {
+        ArrayList<QuestsConfigLoader.ConfigProblem> problems = new ArrayList<>();
+        if (TaskUtils.configValidateExists(root + ".amount", config.get("amount"), problems, "amount", super.getType()))
+            TaskUtils.configValidateInt(root + ".amount", config.get("amount"), problems, false, true, "amount");
+        return problems;
     }
 
     @Override
@@ -67,6 +78,8 @@ public final class BrewingTaskType extends TaskType {
                     QuestProgress questProgress = questProgressFile.getQuestProgress(quest);
 
                     for (Task task : quest.getTasksOfType(super.getType())) {
+                        if (!TaskUtils.validateWorld(player, task)) continue;
+
                         TaskProgress taskProgress = questProgress.getTaskProgress(task.getId());
 
                         if (taskProgress.isCompleted()) {

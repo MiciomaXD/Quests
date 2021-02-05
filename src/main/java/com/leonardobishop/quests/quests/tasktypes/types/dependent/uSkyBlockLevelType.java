@@ -1,5 +1,6 @@
-package com.leonardobishop.quests.quests.tasktypes.types;
+package com.leonardobishop.quests.quests.tasktypes.types.dependent;
 
+import com.leonardobishop.quests.QuestsConfigLoader;
 import com.leonardobishop.quests.api.QuestsAPI;
 import com.leonardobishop.quests.player.QPlayer;
 import com.leonardobishop.quests.player.questprogressfile.QuestProgress;
@@ -9,21 +10,32 @@ import com.leonardobishop.quests.quests.Quest;
 import com.leonardobishop.quests.quests.Task;
 import com.leonardobishop.quests.quests.tasktypes.ConfigValue;
 import com.leonardobishop.quests.quests.tasktypes.TaskType;
-import com.wasteofplastic.askyblock.events.IslandPostLevelEvent;
+import com.leonardobishop.quests.quests.tasktypes.TaskUtils;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import us.talabrek.ultimateskyblock.api.event.uSkyBlockScoreChangedEvent;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
-public final class ASkyBlockLevelType extends TaskType {
+public final class uSkyBlockLevelType extends TaskType {
 
     private List<ConfigValue> creatorConfigValues = new ArrayList<>();
 
-    public ASkyBlockLevelType() {
-        super("askyblock_level", "LMBishop", "Reach a certain island level for ASkyBlock.");
+    public uSkyBlockLevelType() {
+        super("uskyblock_level", "LMBishop", "Reach a certain island level for uSkyBlock.");
         this.creatorConfigValues.add(new ConfigValue("level", true, "Minimum island level needed."));
     }
+
+    @Override
+    public List<QuestsConfigLoader.ConfigProblem> detectProblemsInConfig(String root, HashMap<String, Object> config) {
+        ArrayList<QuestsConfigLoader.ConfigProblem> problems = new ArrayList<>();
+        if (TaskUtils.configValidateExists(root + ".level", config.get("level"), problems, "level", super.getType()))
+            TaskUtils.configValidateInt(root + ".level", config.get("level"), problems, false, false, "level");
+        return problems;
+    }
+
 
     @Override
     public List<ConfigValue> getCreatorConfigValues() {
@@ -31,8 +43,8 @@ public final class ASkyBlockLevelType extends TaskType {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onIslandLevel(IslandPostLevelEvent event) {
-        QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(event.getPlayer(), true);
+    public void onIslandLevel(uSkyBlockScoreChangedEvent event) {
+        QPlayer qPlayer = QuestsAPI.getPlayerManager().getPlayer(event.getPlayer().getUniqueId(), true);
         if (qPlayer == null) {
             return;
         }
@@ -50,15 +62,16 @@ public final class ASkyBlockLevelType extends TaskType {
                         continue;
                     }
 
-                    long islandLevelNeeded = (long) (int) task.getConfigValue("level");
+                    double islandLevelNeeded = (double) (int) task.getConfigValue("level");
 
-                    taskProgress.setProgress(event.getLongLevel());
+                    taskProgress.setProgress(event.getScore().getScore());
 
-                    if (((long) taskProgress.getProgress()) >= islandLevelNeeded) {
+                    if (((double) taskProgress.getProgress()) >= islandLevelNeeded) {
                         taskProgress.setCompleted(true);
                     }
                 }
             }
         }
     }
+
 }
